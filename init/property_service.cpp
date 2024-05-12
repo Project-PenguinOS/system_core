@@ -453,6 +453,10 @@ static uint32_t SendControlMessage(const std::string& msg, const std::string& na
                                    SocketConnection* socket, std::string* error) {
     auto lock = std::lock_guard{accept_messages_lock};
     if (!accept_messages) {
+        // If we're already shutting down and you're asking us to stop something,
+        // just say we did (https://issuetracker.google.com/336223505).
+        if (msg == "stop") return PROP_SUCCESS;
+
         *error = "Received control message after shutdown, ignoring";
         return PROP_ERROR_HANDLE_CONTROL_MESSAGE;
     }
@@ -1411,14 +1415,12 @@ void CreateSerializedPropertyInfo() {
     }
     selinux_android_restorecon(PROP_TREE_FILE, 0);
 
-#ifdef WRITE_APPCOMPAT_OVERRIDE_SYSTEM_PROPERTIES
     mkdir(APPCOMPAT_OVERRIDE_PROP_FOLDERNAME, S_IRWXU | S_IXGRP | S_IXOTH);
     if (!WriteStringToFile(serialized_contexts, APPCOMPAT_OVERRIDE_PROP_TREE_FILE, 0444, 0, 0,
                            false)) {
         PLOG(ERROR) << "Unable to write appcompat override property infos to file";
     }
     selinux_android_restorecon(APPCOMPAT_OVERRIDE_PROP_TREE_FILE, 0);
-#endif
 }
 
 static void ExportKernelBootProps() {

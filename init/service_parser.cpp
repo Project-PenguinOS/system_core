@@ -680,7 +680,7 @@ Result<void> ServiceParser::EndSection() {
 
     if (service_->proc_attr_.parsed_uid == std::nullopt) {
         LOG(WARNING) << "No user specified for service '" << service_->name()
-                     << "'. Defaults to root.";
+                     << "', so it is root.";
     }
 
     if (interface_inheritance_hierarchy_) {

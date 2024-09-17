@@ -293,8 +293,8 @@ void DumpState() {
 Parser CreateParser(ActionManager& action_manager, ServiceList& service_list) {
     Parser parser;
 
-    parser.AddSectionParser("service", std::make_unique<ServiceParser>(
-                                               &service_list, GetSubcontext(), std::nullopt));
+    parser.AddSectionParser("service",
+                            std::make_unique<ServiceParser>(&service_list, GetSubcontext()));
     parser.AddSectionParser("on", std::make_unique<ActionParser>(&action_manager, GetSubcontext()));
     parser.AddSectionParser("import", std::make_unique<ImportParser>(&parser));
 
@@ -349,9 +349,7 @@ Parser CreateApexConfigParser(ActionManager& action_manager, ServiceList& servic
         }
     }
 #endif  // RECOVERY
-    parser.AddSectionParser("service",
-                            std::make_unique<ServiceParser>(&service_list, subcontext,
-                            std::nullopt));
+    parser.AddSectionParser("service", std::make_unique<ServiceParser>(&service_list, subcontext));
     parser.AddSectionParser("on", std::make_unique<ActionParser>(&action_manager, subcontext));
 
     return parser;

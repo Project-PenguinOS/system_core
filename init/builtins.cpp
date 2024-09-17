@@ -1193,8 +1193,7 @@ static Result<void> do_init_user0(const BuiltinArguments& args) {
 }
 
 static Result<void> do_mark_post_data(const BuiltinArguments& args) {
-    ServiceList::GetInstance().MarkPostData();
-
+    LOG(INFO) << "deprecated action `mark_post_data` called.";
     return {};
 }
 

@@ -86,6 +86,11 @@
       "Name": "FreezerState",
       "Controller": "freezer",
       "File": "cgroup.freeze"
+    },
+    {
+      "Name": "CgroupProcs",
+      "Controller": "cgroup2",
+      "File": "cgroup.procs"
     }
   ],
 

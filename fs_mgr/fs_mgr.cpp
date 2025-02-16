@@ -2365,7 +2365,7 @@ OverlayfsCheckResult CheckOverlayfs() {
     }
 
     if (!use_override_creds) {
-        return {.supported = true};
+        return {.supported = true, ",userxattr"};
     }
 
     struct utsname uts;

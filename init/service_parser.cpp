@@ -25,6 +25,7 @@
 
 #include <android-base/logging.h>
 #include <android-base/parseint.h>
+#include <android-base/properties.h>
 #include <android-base/strings.h>
 #include <processgroup/processgroup.h>
 #include <system/thread_defs.h>
@@ -676,8 +677,14 @@ Result<void> ServiceParser::EndSection() {
     }
 
     if (service_->proc_attr_.parsed_uid == std::nullopt) {
-        LOG(WARNING) << "No user specified for service '" << service_->name()
-                     << "', so it is root.";
+        if (kAlwaysErrorUserRoot ||
+            android::base::GetIntProperty("ro.vendor.api_level", 0) > 202404) {
+            return Error() << "No user specified for service '" << service_->name()
+                           << "', so it would have been root.";
+        } else {
+            LOG(WARNING) << "No user specified for service '" << service_->name()
+                         << "', so it is root.";
+        }
     }
 
     if (SelinuxGetVendorAndroidVersion() >= __ANDROID_API_R__) {

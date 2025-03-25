@@ -179,11 +179,11 @@ TEST(init, OverrideService) {
     std::string init_script = R"init(
 service A something
     class first
-
+    user nobody
 service A something
     class second
+    user nobody
     override
-
 )init";
 
     ActionManager action_manager;
@@ -609,27 +609,45 @@ TEST(init, LazilyLoadedActionsCanBeTriggeredByTheNextTrigger) {
     EXPECT_EQ(2, num_executed);
 }
 
+TEST(init, RejectsNoUserStartingInV) {
+    std::string init_script =
+            R"init(
+service A something
+    class first
+)init";
+    TemporaryFile tf;
+    ASSERT_TRUE(tf.fd != -1);
+    ASSERT_TRUE(android::base::WriteStringToFd(init_script, tf.fd));
+    ServiceList service_list;
+    Parser parser;
+    parser.AddSectionParser("service", std::make_unique<ServiceParser>(&service_list, nullptr));
+    ASSERT_TRUE(parser.ParseConfig(tf.path));
+
+    if (GetIntProperty("ro.vendor.api_level", 0) > 202404) {
+        ASSERT_EQ(1u, parser.parse_error_count());
+    } else {
+        ASSERT_EQ(0u, parser.parse_error_count());
+    }
+}
+
 TEST(init, RejectsCriticalAndOneshotService) {
     if (GetIntProperty("ro.product.first_api_level", 10000) < 30) {
         GTEST_SKIP() << "Test only valid for devices launching with R or later";
     }
-
     std::string init_script =
             R"init(
 service A something
   class first
+  user root
   critical
   oneshot
 )init";
-
     TemporaryFile tf;
     ASSERT_TRUE(tf.fd != -1);
     ASSERT_TRUE(android::base::WriteStringToFd(init_script, tf.fd));
-
     ServiceList service_list;
     Parser parser;
     parser.AddSectionParser("service", std::make_unique<ServiceParser>(&service_list, nullptr));
-
     ASSERT_TRUE(parser.ParseConfig(tf.path));
     ASSERT_EQ(1u, parser.parse_error_count());
 }

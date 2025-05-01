@@ -92,6 +92,7 @@
 #include "snapuserd_transition.h"
 #include "subcontext.h"
 #include "system/core/init/property_service.pb.h"
+#include "tradeinmode.h"
 #include "util.h"
 
 #ifndef RECOVERY
@@ -999,6 +1000,11 @@ static int SetQspaProperties() {
     return 0;
 }
 
+static Result<void> CheckTradeInModeStatus([[maybe_unused]] const BuiltinArguments& args) {
+    RequestTradeInModeWipeIfNeeded();
+    return {};
+}
+
 static void SecondStageBootMonitor(int timeout_sec) {
     auto cur_time = boot_clock::now().time_since_epoch();
     int cur_sec = std::chrono::duration_cast<std::chrono::seconds>(cur_time).count();
@@ -1207,6 +1213,7 @@ int SecondStageMain(int argc, char** argv) {
 
     // Queue an action that waits for coldboot done so we know ueventd has set up all of /dev...
     am.QueueBuiltinAction(wait_for_coldboot_done_action, "wait_for_coldboot_done");
+    am.QueueBuiltinAction(CheckTradeInModeStatus, "CheckTradeInModeStatus");
     // ... so that we can start queuing up actions that require stuff from /dev.
     am.QueueBuiltinAction(SetMmapRndBitsAction, "SetMmapRndBits");
     Keychords keychords;

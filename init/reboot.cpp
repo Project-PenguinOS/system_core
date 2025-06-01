@@ -391,7 +391,9 @@ static void RebootMonitorThread(unsigned int cmd) {
     // We want quite a long timeout here since the "sync" in the calling
     // thread can be quite slow.
     constexpr unsigned int shutdown_watchdog_timeout_default = 300;
-    constexpr unsigned int shutdown_watchdog_timeout_min = 60;
+    // For microdroid, let watchdog timeout be arbitrary smaller because sync there wouldn't take
+    // that long.
+    constexpr unsigned int shutdown_watchdog_timeout_min = IsMicrodroid() ? 0 : 60;
     auto shutdown_watchdog_timeout = android::base::GetUintProperty(
             "ro.build.shutdown.watchdog.timeout", shutdown_watchdog_timeout_default);
 
@@ -598,7 +600,7 @@ static Result<void> KillZramBackingDevice() {
         return ErrnoError() << "Failed to read " << ZRAM_BACK_DEV;
     }
 
-    android::base::Trim(backing_dev);
+    backing_dev = android::base::Trim(backing_dev);
 
     if (android::base::StartsWith(backing_dev, "none")) {
         LOG(INFO) << "No zram backing device configured";
@@ -623,7 +625,7 @@ static Result<void> KillZramBackingDevice() {
         return ErrnoError() << "Failed to read " << ZRAM_BACK_DEV;
     }
 
-    android::base::Trim(backing_dev);
+    backing_dev = android::base::Trim(backing_dev);
 
     if (!android::base::StartsWith(backing_dev, "/dev/block/loop")) {
         LOG(INFO) << backing_dev << " is not a loop device. Exiting early";

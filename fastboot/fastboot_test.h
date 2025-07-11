@@ -1,4 +1,4 @@
-// Copyright (C) 2015 The Android Open Source Project
+// Copyright (C) 2025 The Android Open Source Project
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,28 +11,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+#pragma once
 
-package {
-    default_applicable_licenses: ["Android-Apache-2.0"],
-}
+#include "util.h"
 
-cc_test {
-    name: "tipc-test",
-    vendor: true,
-
-    srcs: ["tipc_test.c"],
-    shared_libs: [
-        "libc",
-        "libdmabufheap",
-        "liblog",
-        "libtrusty",
-    ],
-    gtest: false,
-    cflags: [
-        "-Wall",
-        "-Werror",
-    ],
-    test_suites: [
-        "device-tests",
-    ],
-}
+class TestImageSource : public ImageSource {
+  public:
+    bool ReadFile(const std::string&, std::vector<char>*) const override;
+    android::base::unique_fd OpenFile(const std::string& name) const override;
+};

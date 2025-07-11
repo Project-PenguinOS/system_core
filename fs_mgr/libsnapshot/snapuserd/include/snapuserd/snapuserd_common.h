@@ -1,4 +1,4 @@
-// Copyright (C) 2015 The Android Open Source Project
+// Copyright (C) 2023 The Android Open Source Project
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,27 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package {
-    default_applicable_licenses: ["Android-Apache-2.0"],
-}
+#pragma once
 
-cc_test {
-    name: "tipc-test",
-    vendor: true,
+#include <functional>
+#include <string>
 
-    srcs: ["tipc_test.c"],
-    shared_libs: [
-        "libc",
-        "libdmabufheap",
-        "liblog",
-        "libtrusty",
-    ],
-    gtest: false,
-    cflags: [
-        "-Wall",
-        "-Werror",
-    ],
-    test_suites: [
-        "device-tests",
-    ],
-}
+namespace android {
+namespace snapshot {
+
+// Function signature for the uevent helper callback.
+using UeventHelperCallback = std::function<bool(const std::string&)>;
+
+}  // namespace snapshot
+}  // namespace android

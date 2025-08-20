@@ -1043,8 +1043,6 @@ bool SnapshotManager::MapSourceDevice(LockedFile* lock, const std::string& name,
     }
 
     auto old_name = GetOtherPartitionName(name);
-    auto slot_suffix = device_->GetSlotSuffix();
-    auto slot = SlotNumberForSlotSuffix(slot_suffix);
 
     CreateLogicalPartitionParams params = {
             .block_device = device_->GetSuperDevice(),
@@ -3855,8 +3853,6 @@ Return SnapshotManager::CreateUpdateSnapshots(const DeltaArchiveManifest& manife
     std::string vabc_disable_reason;
     if (!dap_metadata.vabc_enabled()) {
         vabc_disable_reason = "not enabled metadata";
-    } else if (device_->IsRecovery()) {
-        vabc_disable_reason = "recovery";
     } else if (!KernelSupportsCompressedSnapshots()) {
         vabc_disable_reason = "kernel missing userspace block device support";
     }
@@ -3895,7 +3891,8 @@ Return SnapshotManager::CreateUpdateSnapshots(const DeltaArchiveManifest& manife
 
     const bool using_snapuserd = userspace_snapshots || legacy_compression;
     if (!using_snapuserd) {
-        LOG(INFO) << "Using legacy Virtual A/B (dm-snapshot)";
+        LOG(ERROR) << "Using legacy Virtual A/B (dm-snapshot)";
+        return Return::Error();
     }
 
     std::string compression_algorithm;
@@ -4571,14 +4568,13 @@ bool SnapshotManager::HandleImminentDataWipe(const std::function<void()>& callba
                 break;
             }
             if (!HasForwardMergeIndicator()) {
-                auto slot_number = SlotNumberForSlotSuffix(device_->GetSlotSuffix());
                 auto other_slot_number = SlotNumberForSlotSuffix(device_->GetOtherSlotSuffix());
 
                 // We're not allowed to forward merge, so forcefully rollback the
                 // slot switch.
                 LOG(INFO) << "Allowing wipe due to lack of forward merge indicator; reverting to "
                              "old slot since update will be deleted.";
-                device_->SetSlotAsUnbootable(slot_number);
+                device_->SetSlotAsUnbootable(SlotNumberForSlotSuffix(device_->GetSlotSuffix()));
                 device_->SetActiveBootSlot(other_slot_number);
                 break;
             }
@@ -4600,7 +4596,6 @@ bool SnapshotManager::HandleImminentDataWipe(const std::function<void()>& callba
     }
 
     if (try_merge) {
-        auto slot_number = SlotNumberForSlotSuffix(device_->GetSlotSuffix());
         auto super_path = device_->GetSuperDevice();
         if (!CreateLogicalAndSnapshotPartitions(super_path, 20s)) {
             LOG(ERROR) << "Unable to map partitions to complete merge.";
@@ -4648,7 +4643,6 @@ bool SnapshotManager::FinishMergeInRecovery() {
         return false;
     }
 
-    auto slot_number = SlotNumberForSlotSuffix(device_->GetSlotSuffix());
     auto super_path = device_->GetSuperDevice();
     if (!CreateLogicalAndSnapshotPartitions(super_path, 20s)) {
         LOG(ERROR) << "Unable to map partitions to complete merge.";
@@ -4778,8 +4772,6 @@ CreateResult SnapshotManager::RecoveryCreateSnapshotDevices(
         return CreateResult::NOT_CREATED;
     }
 
-    auto slot_suffix = device_->GetOtherSlotSuffix();
-    auto slot_number = SlotNumberForSlotSuffix(slot_suffix);
     auto super_path = device_->GetSuperDevice();
     if (!CreateLogicalAndSnapshotPartitions(super_path, 20s)) {
         LOG(ERROR) << "Unable to map partitions.";

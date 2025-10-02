@@ -31,6 +31,11 @@
       "File": "memory.stat"
     },
     {
+      "Name": "MemHigh",
+      "Controller": "memory",
+      "File": "memory.high"
+    },
+    {
       "Name": "MemLimit",
       "Controller": "memory",
       "File": "memory.limit_in_bytes",
@@ -46,6 +51,11 @@
       "Name": "MemSwappiness",
       "Controller": "memory",
       "File": "memory.swappiness"
+    },
+    {
+      "Name": "SwapMax",
+      "Controller": "memory",
+      "File": "memory.swap.max"
     },
     {
       "Name": "MemUsage",

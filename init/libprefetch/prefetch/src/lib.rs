@@ -64,17 +64,25 @@ pub fn record(args: &RecordArgs) -> Result<(), Error> {
     }
 
     info!("Starting record.");
+
+    let exclude_mount_prefix: Vec<String> =
+        args.exclude_mount_prefix.iter().filter_map(|p| p.to_str().map(String::from)).collect();
+    let include_mount_prefix: Vec<String> =
+        args.include_mount_prefix.iter().filter_map(|p| p.to_str().map(String::from)).collect();
+
     let (mut tracer, exit_tx) = tracer::Tracer::create(
         args.trace_buffer_size_kib,
         args.tracing_subsystem.clone(),
         args.tracing_instance.clone(),
         args.setup_tracing,
+        exclude_mount_prefix,
+        include_mount_prefix,
     )?;
     let duration = Duration::from_secs(args.duration as u64);
 
     let thd = thread::spawn(move || {
         if !duration.is_zero() {
-            info!("Record start - waiting for duration: {:?}", duration);
+            info!("Record start - waiting for duration: {duration:?}");
             thread::sleep(duration);
         } else {
             #[cfg(target_os = "android")]

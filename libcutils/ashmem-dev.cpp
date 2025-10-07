@@ -34,6 +34,7 @@
 #include <android-base/file.h>
 #include <android-base/properties.h>
 #include <android-base/strings.h>
+#include <android-base/stringprintf.h>
 #include <android-base/unique_fd.h>
 
 #include "ashmem-internal.h"
@@ -189,23 +190,13 @@ static int __ashmem_check_failure(int fd, int result) {
     return result;
 }
 
-static bool is_ashmem_fd(int fd) {
-    static bool fd_check_error_once = false;
-
-    if (__ashmem_is_ashmem(fd, false) == 0) {
-        if (!fd_check_error_once) {
-            ALOGE("memfd: memfd expected but ashmem fd used - please use libcutils");
-            fd_check_error_once = true;
-        }
-
-        return true;
-    }
-
-    return false;
-}
-
 static bool is_memfd_fd(int fd) {
-    return has_memfd_support() && !is_ashmem_fd(fd);
+    std::string fd_path = android::base::StringPrintf("/proc/self/fd/%d", fd);
+    std::string result;
+    if (!android::base::Readlink(fd_path, &result)) {
+        return false;
+    }
+    return result.starts_with("/memfd:");
 }
 
 int ashmem_valid(int fd) {
@@ -259,8 +250,8 @@ int ashmem_create_region(const char* name, size_t size) {
 
     android::base::unique_fd fd(__ashmem_open());
     if (!fd.ok() ||
-        TEMP_FAILURE_RETRY(ioctl(fd, ASHMEM_SET_NAME, name) < 0) ||
-        TEMP_FAILURE_RETRY(ioctl(fd, ASHMEM_SET_SIZE, size) < 0)) {
+        TEMP_FAILURE_RETRY(ioctl(fd, ASHMEM_SET_NAME, name)) < 0 ||
+        TEMP_FAILURE_RETRY(ioctl(fd, ASHMEM_SET_SIZE, size)) < 0) {
         return -1;
     }
     return fd.release();

@@ -22,11 +22,14 @@ namespace snapshot {
 bool SetThreadPriority(int priority);
 bool SetProfiles(std::initializer_list<std::string_view> profiles);
 bool KernelSupportsIoUring();
+bool KernelSupportsDeferTask();
+
 bool GetUserspaceSnapshotsEnabledProperty();
 bool KernelSupportsCompressedSnapshots();
 bool CanUseUserspaceSnapshots();
 bool IsVendorFromAndroid12();
-bool KernelSupportsUblk();
-bool IsVabcWithUblkSupportEnabled();
+
+bool InitializeUringForMerge(struct io_uring* ring, int queue_depth);
+
 }  // namespace snapshot
 }  // namespace android

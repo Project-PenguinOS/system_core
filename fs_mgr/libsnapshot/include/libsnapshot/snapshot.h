@@ -204,9 +204,9 @@ class ISnapshotManager {
     //   Other: 0
     virtual UpdateState GetUpdateState(double* progress = nullptr) = 0;
 
-    // Returns true if compression is enabled for the current update. This always returns false if
+    // Returns true if snapuserd is used for the current update. This always returns false if
     // UpdateState is None, or no snapshots have been created.
-    virtual bool UpdateUsesCompression() = 0;
+    virtual bool UpdateUsesSnapuserd() = 0;
 
     // Returns true if userspace snapshots is enabled for the current update.
     virtual bool UpdateUsesUserSnapshots() = 0;
@@ -379,7 +379,7 @@ class SnapshotManager final : public ISnapshotManager {
     UpdateState ProcessUpdateState(const std::function<bool()>& callback = {},
                                    const std::function<bool()>& before_cancel = {}) override;
     UpdateState GetUpdateState(double* progress = nullptr) override;
-    bool UpdateUsesCompression() override;
+    bool UpdateUsesSnapuserd() override;
     bool UpdateUsesUserSnapshots() override;
     Return CreateUpdateSnapshots(const DeltaArchiveManifest& manifest) override;
     bool MapUpdateSnapshot(const CreateLogicalPartitionParams& params,
@@ -434,6 +434,7 @@ class SnapshotManager final : public ISnapshotManager {
 
     enum class SnapshotDriver { DM_SNAPSHOT, DM_USER, UBLK };
 
+    bool UpdateUsesUblk();
     // Add new public entries above this line.
 
   private:
@@ -467,6 +468,7 @@ class SnapshotManager final : public ISnapshotManager {
     FRIEND_TEST(SnapshotUpdateTest, InterruptMergeDuringPhaseUpdate);
     FRIEND_TEST(SnapshotUpdateTest, MapAllSnapshotsWithoutSlotSwitch);
     FRIEND_TEST(SnapshotUpdateTest, CancelInRecovery);
+    FRIEND_TEST(SnapshotUpdateTest, MergeRespectsSourceUblkDisabled);
     friend class SnapshotTest;
     friend class SnapshotUpdateTest;
     friend class FlashAfterUpdateTest;
@@ -873,8 +875,9 @@ class SnapshotManager final : public ISnapshotManager {
 
     SnapuserdClient* snapuserd_client() const { return snapuserd_client_.get(); }
 
-    // Helper of UpdateUsesCompression
-    bool UpdateUsesCompression(LockedFile* lock);
+    // Helper of UpdateUsesSnapuserd
+    bool UpdateUsesSnapuserd(LockedFile* lock);
+
     // Locked and unlocked functions to test whether the current update uses
     // userspace snapshots.
     bool UpdateUsesUserSnapshots(LockedFile* lock);
@@ -884,9 +887,6 @@ class SnapshotManager final : public ISnapshotManager {
 
     // Check if we need to use Ublk
     bool UpdateUsesUblk(LockedFile* lock);
-
-    // Check if we need to use Ublk without lock
-    bool UpdateUsesUblk();
 
     // Check if direct reads are enabled for the source image
     bool UpdateUsesODirect(LockedFile* lock);

@@ -46,6 +46,7 @@
 #include <liblp/property_fetcher.h>
 
 #include <android/snapshot/snapshot.pb.h>
+#include <libsnapshot/capabilities.h>
 #include <libsnapshot/snapshot_stats.h>
 #include "device_info.h"
 #include "partition_cow_creator.h"
@@ -1042,8 +1043,6 @@ bool SnapshotManager::MapSourceDevice(LockedFile* lock, const std::string& name,
     }
 
     auto old_name = GetOtherPartitionName(name);
-    auto slot_suffix = device_->GetSlotSuffix();
-    auto slot = SlotNumberForSlotSuffix(slot_suffix);
 
     CreateLogicalPartitionParams params = {
             .block_device = device_->GetSuperDevice(),
@@ -1509,8 +1508,8 @@ auto SnapshotManager::CheckMergeState(const std::function<bool()>& before_cancel
     return result;
 }
 
-auto SnapshotManager::CheckMergeState(LockedFile* lock,
-                                      const std::function<bool()>& before_cancel) -> MergeResult {
+auto SnapshotManager::CheckMergeState(LockedFile* lock, const std::function<bool()>& before_cancel)
+        -> MergeResult {
     SnapshotUpdateStatus update_status = ReadSnapshotUpdateStatus(lock);
     switch (update_status.state()) {
         case UpdateState::None:
@@ -2107,6 +2106,8 @@ bool SnapshotManager::PerformInitTransition(InitTransition transition,
         }
         if (UpdateUsesUblk(lock.get())) {
             snapuserd_argv->emplace_back("-ublk");
+        } else {
+            snapuserd_argv->emplace_back("-noublk");
         }
         uint cow_op_merge_size = GetUpdateCowOpMergeSize(lock.get());
         if (cow_op_merge_size != 0) {
@@ -2124,6 +2125,9 @@ bool SnapshotManager::PerformInitTransition(InitTransition transition,
         if (num_verify_threads != 0) {
             snapuserd_argv->emplace_back("-num_verify_threads=" +
                                          std::to_string(num_verify_threads));
+        }
+        if (UpdateUsesSkipVerification(lock.get())) {
+            snapuserd_argv->emplace_back("-skip_verification");
         }
     }
 
@@ -2549,13 +2553,13 @@ bool SnapshotManager::IsSnapshotWithoutSlotSwitch() {
     return (access(GetBootSnapshotsWithoutSlotSwitchPath().c_str(), F_OK) == 0);
 }
 
-bool SnapshotManager::UpdateUsesCompression() {
+bool SnapshotManager::UpdateUsesSnapuserd() {
     auto lock = LockShared();
     if (!lock) return false;
-    return UpdateUsesCompression(lock.get());
+    return UpdateUsesSnapuserd(lock.get());
 }
 
-bool SnapshotManager::UpdateUsesCompression(LockedFile* lock) {
+bool SnapshotManager::UpdateUsesSnapuserd(LockedFile* lock) {
     // This returns true even if compression is "none", since update_engine is
     // really just trying to see if snapuserd is in use.
     SnapshotUpdateStatus update_status = ReadSnapshotUpdateStatus(lock);
@@ -3258,7 +3262,7 @@ bool SnapshotManager::UnmapCowDevices(LockedFile* lock, const std::string& name)
     CHECK(lock);
     if (!EnsureImageManager()) return false;
 
-    if (UpdateUsesCompression(lock) && !UpdateUsesUserSnapshots(lock)) {
+    if (UpdateUsesSnapuserd(lock) && !UpdateUsesUserSnapshots(lock)) {
         auto dm_user_name = GetSnapshotCowName(name, GetSnapshotDriver(lock));
         if (!UnmapDmUserDevice(dm_user_name)) {
             return false;
@@ -3442,8 +3446,8 @@ bool SnapshotManager::UnmapAllSnapshots(LockedFile* lock) {
     return true;
 }
 
-auto SnapshotManager::OpenFile(const std::string& file,
-                               int lock_flags) -> std::unique_ptr<LockedFile> {
+auto SnapshotManager::OpenFile(const std::string& file, int lock_flags)
+        -> std::unique_ptr<LockedFile> {
     const auto start = std::chrono::system_clock::now();
     unique_fd fd(open(file.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW));
     if (fd < 0) {
@@ -4007,7 +4011,7 @@ Return SnapshotManager::CreateUpdateSnapshots(const DeltaArchiveManifest& manife
                 android::base::GetUintProperty<uint32_t>("ro.virtual_ab.verify_block_size", 0));
         status.set_num_verification_threads(
                 android::base::GetUintProperty<uint32_t>("ro.virtual_ab.num_verify_threads", 0));
-        status.set_ublk_snapshots_enabled(GetUblkEnabledProperty());
+        status.set_ublk_snapshots_enabled(IsUblkEnabled());
         is_snapshot_ublk_.emplace(status.ublk_snapshots_enabled());
         LOG(INFO) << "Using ublk snapshots: " << status.ublk_snapshots_enabled();
     } else if (legacy_compression) {
@@ -4565,14 +4569,13 @@ bool SnapshotManager::HandleImminentDataWipe(const std::function<void()>& callba
                 break;
             }
             if (!HasForwardMergeIndicator()) {
-                auto slot_number = SlotNumberForSlotSuffix(device_->GetSlotSuffix());
                 auto other_slot_number = SlotNumberForSlotSuffix(device_->GetOtherSlotSuffix());
 
                 // We're not allowed to forward merge, so forcefully rollback the
                 // slot switch.
                 LOG(INFO) << "Allowing wipe due to lack of forward merge indicator; reverting to "
                              "old slot since update will be deleted.";
-                device_->SetSlotAsUnbootable(slot_number);
+                device_->SetSlotAsUnbootable(SlotNumberForSlotSuffix(device_->GetSlotSuffix()));
                 device_->SetActiveBootSlot(other_slot_number);
                 break;
             }
@@ -4594,7 +4597,6 @@ bool SnapshotManager::HandleImminentDataWipe(const std::function<void()>& callba
     }
 
     if (try_merge) {
-        auto slot_number = SlotNumberForSlotSuffix(device_->GetSlotSuffix());
         auto super_path = device_->GetSuperDevice();
         if (!CreateLogicalAndSnapshotPartitions(super_path, 20s)) {
             LOG(ERROR) << "Unable to map partitions to complete merge.";
@@ -4642,7 +4644,6 @@ bool SnapshotManager::FinishMergeInRecovery() {
         return false;
     }
 
-    auto slot_number = SlotNumberForSlotSuffix(device_->GetSlotSuffix());
     auto super_path = device_->GetSuperDevice();
     if (!CreateLogicalAndSnapshotPartitions(super_path, 20s)) {
         LOG(ERROR) << "Unable to map partitions to complete merge.";
@@ -4772,8 +4773,6 @@ CreateResult SnapshotManager::RecoveryCreateSnapshotDevices(
         return CreateResult::NOT_CREATED;
     }
 
-    auto slot_suffix = device_->GetOtherSlotSuffix();
-    auto slot_number = SlotNumberForSlotSuffix(slot_suffix);
     auto super_path = device_->GetSuperDevice();
     if (!CreateLogicalAndSnapshotPartitions(super_path, 20s)) {
         LOG(ERROR) << "Unable to map partitions.";
@@ -5174,7 +5173,7 @@ bool SnapshotManager::BootFromSnapshotsWithoutSlotSwitch() {
     update_status.set_state(UpdateState::Initiated);
     update_status.set_userspace_snapshots(true);
     update_status.set_using_snapuserd(true);
-    update_status.set_ublk_snapshots_enabled(GetUblkEnabledProperty());
+    update_status.set_ublk_snapshots_enabled(IsUblkEnabled());
     LOG(INFO) << "ublk enabled? :" << update_status.ublk_snapshots_enabled();
     if (!WriteSnapshotUpdateStatus(lock.get(), update_status)) {
         return false;

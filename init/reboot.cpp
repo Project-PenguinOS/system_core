@@ -37,6 +37,7 @@
 #include <sys/wait.h>
 
 #include <chrono>
+#include <map>
 #include <memory>
 #include <set>
 #include <thread>
@@ -142,27 +143,6 @@ class MountEntry {
             PLOG(WARNING) << "Cannot umount " << mnt_fsname_ << ":" << mnt_dir_ << " opts "
                           << mnt_opts_;
             return false;
-        }
-    }
-
-    void DoFsck() {
-        int st;
-        if (IsF2Fs()) {
-            const char* f2fs_argv[] = {
-                    "/system/bin/fsck.f2fs",
-                    "-a",
-                    mnt_fsname_.c_str(),
-            };
-            logwrap_fork_execvp(arraysize(f2fs_argv), f2fs_argv, &st, false, LOG_KLOG, true,
-                                nullptr);
-        } else if (IsExt4()) {
-            const char* ext4_argv[] = {
-                    "/system/bin/e2fsck",
-                    "-y",
-                    mnt_fsname_.c_str(),
-            };
-            logwrap_fork_execvp(arraysize(ext4_argv), ext4_argv, &st, false, LOG_KLOG, true,
-                                nullptr);
         }
     }
 
@@ -405,7 +385,7 @@ static UmountStat UmountPartitions(std::chrono::milliseconds timeout, bool ota_u
     ReapAnyOutstandingChildren();
 
     Timer t;
-    /* If the current waiting is not good enough, give up and leave it to e2fsck after reboot to
+    /* If the current waiting is not good enough, give up and leave it to fsck after reboot to
      * fix it.
      */
     while (true) {
@@ -540,16 +520,12 @@ static bool UmountDynamicPartitions(const std::vector<std::string>& dynamic_part
  *
  * return true when umount was successful. false when timed out.
  */
-static UmountStat TryUmountAndFsck(unsigned int cmd, bool run_fsck,
-                                   std::chrono::milliseconds timeout) {
+static UmountStat TryUmount(unsigned int cmd, std::chrono::milliseconds timeout) {
     Timer t;
     std::vector<MountEntry> block_devices;
     std::vector<MountEntry> emulated_devices;
     std::vector<std::string> dynamic_partitions;
 
-    if (run_fsck && !FindPartitionsToUmount(&block_devices, &emulated_devices)) {
-        return UMOUNT_STAT_ERROR;
-    }
     bool ota_update_in_progress = false;
     if (!IsMicrodroid()) {
         auto sm = snapshot::SnapshotManager::New();
@@ -604,20 +580,15 @@ static UmountStat TryUmountAndFsck(unsigned int cmd, bool run_fsck,
         }
     }
 
-    if (stat == UMOUNT_STAT_SUCCESS && run_fsck) {
-        for (auto& entry : block_devices) {
-            entry.DoFsck();
-        }
-    }
     return stat;
 }
 
 // zram is able to use backing device on top of a loopback device.
 // In order to unmount /data successfully, we have to kill the loopback device first
-#define ZRAM_DEVICE       "/dev/block/zram0"
-#define ZRAM_RESET        "/sys/block/zram0/reset"
-#define ZRAM_BACK_DEV     "/sys/block/zram0/backing_dev"
-#define ZRAM_INITSTATE    "/sys/block/zram0/initstate"
+#define ZRAM_DEVICE "/dev/block/zram0"
+#define ZRAM_RESET "/sys/block/zram0/reset"
+#define ZRAM_BACK_DEV "/sys/block/zram0/backing_dev"
+#define ZRAM_INITSTATE "/sys/block/zram0/initstate"
 static Result<void> KillZramBackingDevice() {
     std::string zram_initstate;
     if (!android::base::ReadFileToString(ZRAM_INITSTATE, &zram_initstate)) {
@@ -628,6 +599,26 @@ static Result<void> KillZramBackingDevice() {
     if (zram_initstate == "0") {
         LOG(INFO) << "Zram has not been swapped on";
         return {};
+    }
+
+    // shutdown zram handle even if it is mis-configured without a backing device.
+    Timer swap_timer;
+    LOG(INFO) << "swapoff() start...";
+    if (swapoff(ZRAM_DEVICE) == -1) {
+        if (errno == EINVAL) {
+            LOG(INFO) << "No active swap on " << ZRAM_DEVICE << "; skipping swapoff.";
+        } else if (errno == ENOENT) {
+            LOG(INFO) << ZRAM_DEVICE << " does not exist; skipping swapoff.";
+        } else {
+            return ErrnoError() << "zram_backing_dev: swapoff(" << ZRAM_DEVICE << ") failed";
+        }
+    } else {
+        LOG(INFO) << "swapoff() took " << swap_timer;
+    }
+
+    if (!WriteStringToFile("1", ZRAM_RESET)) {
+        return Error() << "zram_backing_dev: reset (" << ZRAM_RESET << ")"
+                       << " failed";
     }
 
     if (access(ZRAM_BACK_DEV, F_OK) != 0 && errno == ENOENT) {
@@ -646,20 +637,6 @@ static Result<void> KillZramBackingDevice() {
         return {};
     }
 
-    // shutdown zram handle
-    Timer swap_timer;
-    LOG(INFO) << "swapoff() start...";
-    if (swapoff(ZRAM_DEVICE) == -1) {
-        return ErrnoError() << "zram_backing_dev: swapoff (" << backing_dev << ")"
-                            << " failed";
-    }
-    LOG(INFO) << "swapoff() took " << swap_timer;
-
-    if (!WriteStringToFile("1", ZRAM_RESET)) {
-        return Error() << "zram_backing_dev: reset (" << backing_dev << ")"
-                       << " failed";
-    }
-
     if (!android::base::ReadFileToString(ZRAM_BACK_DEV, &backing_dev)) {
         return ErrnoError() << "Failed to read " << ZRAM_BACK_DEV;
     }
@@ -674,24 +651,21 @@ static Result<void> KillZramBackingDevice() {
     // clear loopback device
     unique_fd loop(TEMP_FAILURE_RETRY(open(backing_dev.c_str(), O_RDWR | O_CLOEXEC)));
     if (loop.get() < 0) {
-        return ErrnoError() << "zram_backing_dev: open(" << backing_dev << ")"
-                            << " failed";
+        return ErrnoError() << "zram_backing_dev: open(" << backing_dev << ")" << " failed";
     }
 
     if (ioctl(loop.get(), LOOP_CLR_FD, 0) < 0) {
-        return ErrnoError() << "zram_backing_dev: loop_clear (" << backing_dev << ")"
-                            << " failed";
+        return ErrnoError() << "zram_backing_dev: loop_clear (" << backing_dev << ")" << " failed";
     }
     LOG(INFO) << "zram_backing_dev: `" << backing_dev << "` is cleared successfully.";
     return {};
 }
 
-// Stops given services, waits for them to be stopped for |timeout| ms.
+// Stops given services, and returns pids to be waited on.
 // If terminate is true, then SIGTERM is sent to services, otherwise SIGKILL is sent.
 // Note that services are stopped in order given by |ServiceList::services_in_shutdown_order|
 // function.
-static void StopServices(const std::set<std::string>& services, std::chrono::milliseconds timeout,
-                         bool terminate) {
+static std::vector<pid_t> StopServices(const std::set<std::string>& services, bool terminate) {
     LOG(INFO) << "Stopping " << services.size() << " services by sending "
               << (terminate ? "SIGTERM" : "SIGKILL");
     std::vector<pid_t> pids;
@@ -709,29 +683,138 @@ static void StopServices(const std::set<std::string>& services, std::chrono::mil
             s->Stop();
         }
     }
+    return pids;
+}
+
+// Retrieves all processes whose process group is not lead by any service which init tracks. In
+// other words, these are processes which can't get killed by stopping a service.
+static std::vector<android::procinfo::ProcessInfo> GetAllUntrackedProcesses() {
+    std::map<pid_t, android::procinfo::ProcessInfo> untracked;
+    std::string error;
+    pid_t init_pgid = getpgid(0);  // my pgid
+    pid_t adbd_pid = -1;           // not found
+    for (const auto& pid : android::base::AllPids{}) {
+        android::procinfo::ProcessInfo info;
+        if (!android::procinfo::GetProcessInfo(pid, &info, &error)) {
+            LOG(WARNING) << "Cannot get info for pid " << pid << ": " << error;
+            continue;
+        }
+
+        // AllPids is not guaranteed to return PIDs in sorted order. Record the pid of adbd in this
+        // loop, and find its descendants in another loop below.
+        if (info.name == "adbd" && info.ppid == 1) {
+            adbd_pid = info.pid;
+        }
+
+        bool init_or_kthread = (info.ppid == 0) || (info.ppid == 2);
+        if (init_or_kthread) {
+            continue;
+        }
+        // This is mainly to filter out snapuserd which is used for OTA. We shouldn't kill it during
+        // reboot until the very end as it may be having I/Os. This condition in theory capture more
+        // processes than just snapuserd, and it's fine; we don't have to kill them early. They will
+        // eventually be killed via sysrq.
+        bool init_subprocess = (info.ppid == 1) && (info.pgrp == init_pgid) && (info.uid == 0);
+        if (init_subprocess) {
+            continue;
+        }
+
+        bool tracked = ServiceList::GetInstance().FindService(info.pgrp, &Service::pid) != nullptr;
+        if (!tracked) {
+            untracked.insert({info.pid, std::move(info)});
+        }
+    }
+    // If there's adb commands running, don't kill them early, especially before adbd is off.
+    // Otherwise, the host-side will notice the termination of the command, instead of adb
+    // disconnection.  Some host-side tools (ex: `adb reboot`) expect and
+    // handle disconnection gracefully, but assert on the termination of commands.
+    auto check_if_descendant_of_adbd = [&](const android::procinfo::ProcessInfo& info) {
+        const android::procinfo::ProcessInfo* cur = &info;
+        while (cur->ppid != 1) {
+            if (cur->ppid == adbd_pid) return true;
+            if (auto parent = untracked.find(cur->ppid); parent != untracked.end()) {
+                cur = &(parent->second);
+                continue;
+            } else {
+                return false;
+            }
+        }
+        return false;
+    };
+    std::vector<pid_t> adbd_procs;
+    for (const auto& pair : untracked) {
+        if (check_if_descendant_of_adbd(pair.second)) {
+            adbd_procs.push_back(pair.first);
+        }
+    }
+    std::vector<android::procinfo::ProcessInfo> ret;
+    for (auto it = untracked.begin(); it != untracked.end();) {
+        auto nh = untracked.extract(it++);
+        if (std::find(adbd_procs.begin(), adbd_procs.end(), nh.key()) == adbd_procs.end()) {
+            ret.push_back(std::move(nh.mapped()));
+        }
+    }
+    return ret;
+}
+
+static std::set<pid_t> StopUntrackedProcesses(bool terminate) {
+    std::set<pid_t> groups_to_stop;
+    for (auto info : GetAllUntrackedProcesses()) {
+        groups_to_stop.insert(info.pgrp);
+    }
+
+    int signum = terminate ? SIGTERM : SIGKILL;
+    std::string signame = SignalName(signum);
+    for (pid_t pgid : groups_to_stop) {
+        LOG(INFO) << "Stopping untracked process group " << pgid << " by sending " << signame;
+        if (killpg(pgid, signum) == -1) {
+            LOG(ERROR) << "Failed to send " << signame << " to process group " << pgid << ": "
+                       << strerror(errno);
+        }
+    }
+    return groups_to_stop;
+}
+
+// Wait for the given pids to be reaped until |timeout| expires, logs all pids that failed to stop
+// after provided timeout. Returns number of violators
+static int WaitAndLogViolations(const std::vector<pid_t>& pids, std::chrono::milliseconds timeout) {
     if (timeout > 0ms) {
         WaitToBeReaped(Service::GetSigchldFd(), pids, timeout);
     } else {
         // Even if we don't to wait for services to stop, we still optimistically reap zombies.
         ReapAnyOutstandingChildren();
     }
-}
 
-// Like StopServices, but also logs all the services that failed to stop after the provided timeout.
-// Returns number of violators.
-int StopServicesAndLogViolations(const std::set<std::string>& services,
-                                 std::chrono::milliseconds timeout, bool terminate) {
-    StopServices(services, timeout, terminate);
     int still_running = 0;
+    // a pid can be of a service or an untracked process
     for (const auto& s : ServiceList::GetInstance()) {
-        if (s->IsRunning() && services.count(s->name())) {
+        if (s->IsRunning() && std::find(pids.begin(), pids.end(), s->pid()) != pids.end()) {
             LOG(ERROR) << "[service-misbehaving] : service '" << s->name() << "' is still running "
-                       << timeout.count() << "ms after receiving "
-                       << (terminate ? "SIGTERM" : "SIGKILL");
+                       << timeout.count() << "ms after stopped";
+            still_running++;
+        }
+    }
+    for (auto info : GetAllUntrackedProcesses()) {
+        if (std::find(pids.begin(), pids.end(), info.pid) != pids.end()) {
+            LOG(INFO)
+                    << std::format(
+                               "Untracked process: pid: {} name: ({}) ppid: {} pgrp: {} state: {}",
+                               info.pid, info.name, info.ppid, info.pgrp,
+                               static_cast<char>(info.state))
+                    << " is still running " << timeout.count() << "ms after stopped";
             still_running++;
         }
     }
     return still_running;
+}
+
+// Test-only function:
+// Like StopServices, but also waits for the services to fully stop, and also logs all the services
+// that failed to stop after the provided timeout.  Returns number of violators.
+int StopServicesAndLogViolations(const std::set<std::string>& services,
+                                 std::chrono::milliseconds timeout, bool terminate) {
+    auto pids = StopServices(services, terminate);
+    return WaitAndLogViolations(pids, timeout);
 }
 
 static Result<void> UnmountAllApexes() {
@@ -755,10 +838,9 @@ static Result<void> UnmountAllApexes() {
 // cmd ANDROID_RB_* as defined in android_reboot.h
 // reason Reason string like "reboot", "shutdown,userrequested"
 // reboot_target Reboot target string like "bootloader". Otherwise, it should be an empty string.
-// run_fsck Whether to run fsck after umount is done.
 //
-static void DoReboot(unsigned int cmd, const std::string& reason, const std::string& reboot_target,
-                     bool run_fsck) {
+static void DoReboot(unsigned int cmd, const std::string& reason,
+                     const std::string& reboot_target) {
     Timer t;
     LOG(INFO) << "Reboot start, reason: " << reason << ", reboot_target: " << reboot_target;
 
@@ -831,7 +913,7 @@ static void DoReboot(unsigned int cmd, const std::string& reason, const std::str
         }
     }
 
-    // remaining operations (specifically fsck) may take a substantial duration
+    // remaining operations may take a substantial duration
     if (!do_shutdown_animation && (cmd == ANDROID_RB_POWEROFF || is_thermal_shutdown)) {
         TurnOffBacklight();
     }
@@ -839,7 +921,6 @@ static void DoReboot(unsigned int cmd, const std::string& reason, const std::str
     Service* boot_anim = ServiceList::GetInstance().FindService("bootanim");
     Service* surface_flinger = ServiceList::GetInstance().FindService("surfaceflinger");
     if (boot_anim != nullptr && surface_flinger != nullptr && surface_flinger->IsRunning()) {
-
         if (do_shutdown_animation) {
             SetProperty("service.bootanim.exit", "0");
             SetProperty("service.bootanim.progress", "0");
@@ -870,10 +951,17 @@ static void DoReboot(unsigned int cmd, const std::string& reason, const std::str
     // optional shutdown step
     // 1. terminate all services except shutdown critical ones. wait for delay to finish
     if (clean_shutdown_timeout > 0ms) {
-        StopServicesAndLogViolations(stop_first, clean_shutdown_timeout / 2, true /* SIGTERM */);
+        auto pids = StopServices(stop_first, true /* SIGTERM */);
+        auto untracked_pids = StopUntrackedProcesses(true /* SIGTERM */);
+        pids.insert(pids.end(), untracked_pids.begin(), untracked_pids.end());
+        WaitAndLogViolations(pids, clean_shutdown_timeout / 2);
     }
     // Send SIGKILL to ones that didn't terminate cleanly.
-    StopServicesAndLogViolations(stop_first, 0ms, false /* SIGKILL */);
+    auto pids = StopServices(stop_first, false /* SIGKILL */);
+    auto untracked_pids = StopUntrackedProcesses(false /* SIGKILL */);
+    pids.insert(pids.end(), untracked_pids.begin(), untracked_pids.end());
+    WaitAndLogViolations(pids, 0ms);
+
     SubcontextTerminate();
     // Reap subcontext pids.
     ReapAnyOutstandingChildren();
@@ -890,8 +978,9 @@ static void DoReboot(unsigned int cmd, const std::string& reason, const std::str
         LOG(INFO) << "vold not running, skipping vold shutdown";
     }
     // logcat stopped here
-    StopServices(kDebuggingServices, 0ms, false /* SIGKILL */);
-    // 4. sync, try umount, and optionally run fsck for user shutdown
+    pids = StopServices(kDebuggingServices, false /* SIGKILL */);
+    WaitAndLogViolations(pids, 0ms);
+    // 4. sync, and try umount
     {
         Timer sync_timer;
         LOG(INFO) << "sync() before umount...";
@@ -906,7 +995,7 @@ static void DoReboot(unsigned int cmd, const std::string& reason, const std::str
     if (auto ret = UnmountAllApexes(); !ret.ok()) {
         LOG(ERROR) << ret.error();
     }
-    UmountStat stat = TryUmountAndFsck(cmd, run_fsck, clean_shutdown_timeout - t.duration());
+    UmountStat stat = TryUmount(cmd, clean_shutdown_timeout - t.duration());
     // Follow what linux shutdown is doing: one more sync with little bit delay
     {
         Timer sync_timer;
@@ -972,14 +1061,11 @@ static void EnterShutdown() {
  * @return true if "command" field is already set, and false if it's empty
  */
 static bool CommandIsPresent(bootloader_message* boot) {
-    if (boot->command[0] == '\0')
-        return false;
+    if (boot->command[0] == '\0') return false;
 
     for (size_t i = 0; i < arraysize(boot->command); ++i) {
-        if (boot->command[i] == '\0')
-            return true;
-        if (!isprint(boot->command[i]))
-            break;
+        if (boot->command[i] == '\0') return true;
+        if (!isprint(boot->command[i])) break;
     }
 
     memset(boot->command, 0, sizeof(boot->command));
@@ -1005,26 +1091,22 @@ void HandlePowerctlMessage(const std::string& command) {
     unsigned int cmd = 0;
     std::vector<std::string> cmd_params = Split(command, ",");
     std::string reboot_target = "";
-    bool run_fsck = false;
     bool command_invalid = false;
 
     if (cmd_params[0] == "shutdown") {
         cmd = ANDROID_RB_POWEROFF;
         if (cmd_params.size() >= 2) {
-            if (cmd_params[1] == "userrequested") {
-                // The shutdown reason is PowerManager.SHUTDOWN_USER_REQUESTED.
-                // Run fsck once the file system is remounted in read-only mode.
-                run_fsck = true;
-            } else if (cmd_params[1] == "thermal") {
+            if (cmd_params[1] == "thermal") {
                 // Turn off sources of heat immediately.
                 TurnOffBacklight();
-                // run_fsck is false to avoid delay
                 cmd = ANDROID_RB_THERMOFF;
             }
         }
     } else if (cmd_params[0] == "reboot") {
         cmd = ANDROID_RB_RESTART2;
-        if (cmd_params.size() >= 2) {
+        // Microdroid essentially treats reboot the same as shutdown, so
+        // compile out this branch to avoid bootloader_message dependency.
+        if (!IsMicrodroid() && cmd_params.size() >= 2) {
             reboot_target = cmd_params[1];
             if (reboot_target == "userspace") {
                 LOG(ERROR) << "Userspace reboot is deprecated.";
@@ -1059,8 +1141,8 @@ void HandlePowerctlMessage(const std::string& command) {
                         return;
                     }
                 }
-            } else if (std::find(cmd_params.begin(), cmd_params.end(), "quiescent")
-                    != cmd_params.end()) { // Quiescent can be either subreason or details.
+            } else if (std::find(cmd_params.begin(), cmd_params.end(), "quiescent") !=
+                       cmd_params.end()) {  // Quiescent can be either subreason or details.
                 bootloader_message boot = {};
                 if (std::string err; !read_bootloader_message(&boot, &err)) {
                     LOG(ERROR) << "Failed to read bootloader message: " << err;
@@ -1111,8 +1193,8 @@ void HandlePowerctlMessage(const std::string& command) {
     // Queue shutdown trigger first
     ActionManager::GetInstance().QueueEventTrigger("shutdown");
     // Queue built-in shutdown_done
-    auto shutdown_handler = [cmd, command, reboot_target, run_fsck](const BuiltinArguments&) {
-        DoReboot(cmd, command, reboot_target, run_fsck);
+    auto shutdown_handler = [cmd, command, reboot_target](const BuiltinArguments&) {
+        DoReboot(cmd, command, reboot_target);
         return Result<void>{};
     };
     ActionManager::GetInstance().QueueBuiltinAction(shutdown_handler, "shutdown_done");

@@ -71,6 +71,7 @@
 #include "action_manager.h"
 #include "action_parser.h"
 #include "apex_init_util.h"
+#include "com_android_init_flags.h"
 #include "epoll.h"
 #include "first_stage_init.h"
 #include "first_stage_mount.h"
@@ -1274,6 +1275,7 @@ int SecondStageMain(int argc, char** argv) {
     }
 
     ActionManager& am = ActionManager::GetInstance();
+    am.EnableInitEventTimestamp(com::android::init::flags::enable_init_event_timestamp());
     ServiceList& sm = ServiceList::GetInstance();
 
     LoadBootScripts(am, sm);

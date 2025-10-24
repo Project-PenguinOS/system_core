@@ -21,6 +21,11 @@
       "File": "top-app/cpus"
     },
     {
+      "Name": "MemEvents",
+      "Controller": "memory",
+      "File": "memory.events"
+    },
+    {
       "Name": "AudioAppCapacityCPUs",
       "Controller": "cpuset",
       "File": "audio-app/cpus"

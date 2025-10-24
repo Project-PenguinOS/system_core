@@ -1100,6 +1100,11 @@ static void SecondStageBootMonitor(int timeout_sec) {
     int extra_sec = timeout_sec <= cur_sec ? 0 : timeout_sec - cur_sec;
     auto boot_timeout = std::chrono::seconds(extra_sec);
 
+    // since boot_completed isn't updated in the recovery boot, let's skip the monitor
+    if (IsRecoveryMode()) {
+        return;
+    }
+
     LOG(INFO) << "Started BootMonitorThread, expiring in " << timeout_sec
               << " seconds from boot-up";
 
@@ -1289,7 +1294,7 @@ int SecondStageMain(int argc, char** argv) {
         }
     }
 
-    // This needs to happen before SetKptrRestrictAction, as we are trying to
+    // This needs to happen before kptr_restrict is raised, as we are trying to
     // open /proc/kallsyms while still being allowed to see the full addresses
     // (since init holds CAP_SYSLOG, and Linux boots with kptr_restrict=0). The
     // address visibility through the saved fd (more specifically, the backing
@@ -1298,7 +1303,6 @@ int SecondStageMain(int argc, char** argv) {
     Service::OpenAndSaveStaticKallsymsFd();
 
     am.QueueBuiltinAction(SetupCgroupsAction, "SetupCgroups");
-    am.QueueBuiltinAction(SetKptrRestrictAction, "SetKptrRestrict");
     am.QueueBuiltinAction(TestPerfEventSelinuxAction, "TestPerfEventSelinux");
     am.QueueEventTrigger("early-init");
     am.QueueBuiltinAction(ConnectEarlyStageSnapuserdAction, "ConnectEarlyStageSnapuserd");

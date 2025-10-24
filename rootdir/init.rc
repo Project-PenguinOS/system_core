@@ -291,6 +291,7 @@ on init
     write /proc/sys/kernel/sched_child_runs_first 0
 
     write /proc/sys/kernel/randomize_va_space 2
+    write /proc/sys/kernel/kptr_restrict 2
     write /proc/sys/vm/mmap_min_addr 32768
     write /proc/sys/net/ipv4/ping_group_range "0 2147483647"
     write /proc/sys/net/unix/max_dgram_qlen 2400
@@ -1089,7 +1090,16 @@ on property:vold.checkpoint_committed=1
 # stuff) and we absolutely want to be before netd and the system boot slot is
 # considered to have booted successfully.
 on load-bpf-programs
+    # Temporarily relax access to kallsyms so that bpfloader can resolve kernel symbols
+    # at load time.
+    #
+    # NOTE: Still requires CAP_SYSLOG and sepolicy allow rules to read /proc/kallsyms
+    write /proc/sys/kernel/kptr_restrict 1
+
     exec_start bpfloader
+
+    # Restore kallsyms protection after bpf programs have been loaded.
+    write /proc/sys/kernel/kptr_restrict 2
 
 on bpf-progs-loaded
     start netd

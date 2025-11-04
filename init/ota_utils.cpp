@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016 The Android Open Source Project
+ * Copyright (C) 2025 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,20 +14,21 @@
  * limitations under the License.
  */
 
-#ifndef HEALTHD_ANIMATION_PARSER_H
-#define HEALTHD_ANIMATION_PARSER_H
+#include "ota_utils.h"
 
-#include <string_view>
-
-#include "animation.h"
+#include <android-base/file.h>
+#include <android-base/logging.h>
 
 namespace android {
+namespace init {
 
-bool parse_animation_desc(const std::string& content, animation* anim);
+bool AttemptingToBootNewSlot() {
+    std::string content;
+    if (!android::base::ReadFileToString("/metadata/ota/state", &content)) {
+        return false;
+    }
+    return content == "Unverified";
+}
 
-bool can_ignore_line(const char* str);
-bool remove_prefix(std::string_view str, const char* prefix, const char** rest);
-bool parse_text_field(const char* in, animation::text_field* field);
+}  // namespace init
 }  // namespace android
-
-#endif  // HEALTHD_ANIMATION_PARSER_H

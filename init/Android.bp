@@ -244,6 +244,7 @@ cc_defaults {
         export_proto_headers: true,
     },
     static_libs: [
+        "libinit_flags",
         "libueventd_flags",
     ],
 
@@ -399,7 +400,6 @@ init_first_stage_cc_defaults {
         "libfs_mgr",
         "libfec",
         "libfec_rs",
-        "libsquashfs_utils",
         "libcrypto_utils",
         "libavb",
         "liblp",

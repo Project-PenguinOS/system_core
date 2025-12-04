@@ -1,5 +1,5 @@
 //
-// Copyright (C) 2019 The Android Open Source Project
+// Copyright (C) 2025 The Android Open-Source Project
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,33 +12,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
 
 package {
     default_applicable_licenses: ["Android-Apache-2.0"],
 }
 
-cc_library_shared {
-    name: "libprocessgroup_setup",
-    recovery_available: true,
-    srcs: [
-        "cgroup_map_write.cpp",
-    ],
-    export_include_dirs: [
-        "include",
-    ],
-    shared_libs: [
-        "libbase",
-        "libjsoncpp",
-    ],
-    static_libs: [
-        "libprocessgroup_util",
-    ],
-    header_libs: [
-        "libprocessgroup_headers",
-    ],
-    export_header_lib_headers: [
-        "libprocessgroup_headers",
-    ],
-    defaults: ["libprocessgroup_defaults"],
+prebuilt_etc {
+    name: "android.hardware.security.hwcrypto.sharedsecret-service.trusty_system_vm_placeholders.xml",
+    sub_dir: "vintf",
+    vendor: true,
+    src: "android.hardware.security.hwcrypto.sharedsecret-service.trusty_system_vm_placeholders.xml",
 }

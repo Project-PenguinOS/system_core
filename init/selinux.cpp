@@ -83,6 +83,7 @@
 #include "second_stage_resources.h"
 #include "snapuserd_transition.h"
 #include "util.h"
+#include "ota_utils.h"
 
 using namespace std::string_literals;
 
@@ -386,7 +387,7 @@ bool OpenSplitPolicy(PolicyFile* policy_file) {
     }
     compile_args.push_back(nullptr);
 
-    if (!ForkExecveAndWaitForCompletion(compile_args[0], (char**)compile_args.data())) {
+    if (ForkExecveAndWaitForCompletion(compile_args[0], (char**)compile_args.data()) != 0) {
         unlink(compiled_sepolicy);
         return false;
     }
@@ -781,7 +782,7 @@ int SetupSelinux(char** argv) {
     SetStdioToDevNull(argv);
     InitKernelLogging(argv);
 
-    if (REBOOT_BOOTLOADER_ON_PANIC) {
+    if (REBOOT_BOOTLOADER_ON_PANIC && !AttemptingToBootNewSlot()) {
         InstallRebootSignalHandlers();
     }
 

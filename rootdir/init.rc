@@ -82,6 +82,9 @@ on early-init
     # Run the init_dev_config service to configure the device.
     exec_start init_dev_config
 
+    # Fix permissions before apexd reads /metadata
+    restorecon /metadata
+
     # Run apexd-bootstrap so that APEXes that provide critical libraries
     # become available. Note that this is executed as exec_start to ensure that
     # the libraries are available to the processes started after this statement.
@@ -955,7 +958,9 @@ on post-fs-data
     # Set the casefold flag on /data/media.  For upgrades, a restorecon can be
     # needed first to relabel the directory from media_rw_data_file.
     restorecon /data/media
-    exec - media_rw media_rw -- /system/bin/chattr +F /data/media
+    start casefolding_remover
+    wait_for_prop ro.casefolding.adjusted 1
+
 
     # A tmpfs directory, which will contain all apps and sdk sandbox CE and DE
     # data directory that bind mount from the original source.
@@ -1322,18 +1327,6 @@ on property:ro.debuggable=1
 
 on init && property:ro.debuggable=1
     start console
-
-# Multi-Gen LRU Experiment
-on property:persist.device_config.mglru_native.lru_gen_config=none
-  write /sys/kernel/mm/lru_gen/enabled 0
-on property:persist.device_config.mglru_native.lru_gen_config=core
-  write /sys/kernel/mm/lru_gen/enabled 1
-on property:persist.device_config.mglru_native.lru_gen_config=core_and_mm_walk
-  write /sys/kernel/mm/lru_gen/enabled 3
-on property:persist.device_config.mglru_native.lru_gen_config=core_and_nonleaf_young
-  write /sys/kernel/mm/lru_gen/enabled 5
-on property:persist.device_config.mglru_native.lru_gen_config=all
-  write /sys/kernel/mm/lru_gen/enabled 7
 
 # Allow other processes to run `snapshotctl` through `init`. This requires
 # `set_prop` permission on `snapshotctl_prop`.

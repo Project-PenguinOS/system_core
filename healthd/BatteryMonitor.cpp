@@ -278,8 +278,12 @@ BatteryHealth getBatteryHealthStatus(int status) {
 
 BatteryChargingPolicy getBatteryChargingPolicy(const char* chargingPolicy) {
     static SysfsStringEnumMap<BatteryChargingPolicy> batteryChargingPolicyMap[] = {
-            {"0", BatteryChargingPolicy::INVALID},   {"1", BatteryChargingPolicy::DEFAULT},
-            {"2", BatteryChargingPolicy::LONG_LIFE}, {"3", BatteryChargingPolicy::ADAPTIVE},
+            {"0", BatteryChargingPolicy::INVALID},
+            {"1", BatteryChargingPolicy::DEFAULT},
+            {"2", BatteryChargingPolicy::ADAPTIVE},
+            {"3", BatteryChargingPolicy::ADAPTIVE},
+            {"4", BatteryChargingPolicy::LONG_LIFE},
+            {"5", BatteryChargingPolicy::FORCE_FULL_CHARGE},
             {NULL, BatteryChargingPolicy::DEFAULT},
     };
 
@@ -581,10 +585,10 @@ static void doLogTemperature(const HealthInfo& props, const char* devPath) {
     char tempstate[12] = {0};
     FILE *fp;
     int ret;
+    int temp = abs(props.batteryTemperatureTenthsCelsius / 10);
 
     snprintf(tempstate, sizeof(tempstate), "0x%x 0x%x", CDD_SYSTEM_DEVICE_TEMP,
-            abs(props.batteryTemperatureTenthsCelsius / 10));
-
+            props.batteryTemperatureTenthsCelsius < 0 ? (temp | 0xF00) : temp);
     fp = fopen(devPath, "w");
     if (fp != NULL) {
         ret = fputs(tempstate, fp);

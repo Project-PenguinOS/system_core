@@ -917,6 +917,7 @@ on post-fs-data
     mkdir /data/ss 0700 system system encryption=Require
 
     mkdir /data/system 0775 system system encryption=Require
+    mkdir /data/system/aiseal 0700 system system
     mkdir /data/system/environ 0700 system system
     # b/183861600 attempt to fix selinux label before running derive_classpath service
     restorecon /data/system/environ
@@ -1021,7 +1022,6 @@ on post-fs-data
     mkdir /data/misc/stats-service/ 0770 statsd system
     mkdir /data/misc/train-info/ 0770 statsd system
 
-    # TODO(b/400439023): Remove once attest modules flagging is removed.
     wait_for_prop apexd.status activated
     # Wait for KeyMints to receive APEX module info before starting code from updateable APEXes.
     # This is to prevent APEX modules from interfering in module measurement.
@@ -1169,8 +1169,6 @@ on boot
     # are not aware of using fsync()/sync() to prepare sudden power-cut.
     write /dev/sys/fs/by-name/userdata/cp_interval 30
     write /dev/sys/fs/by-name/userdata/gc_urgent_sleep_time 50
-    write /dev/sys/fs/by-name/userdata/iostat_period_ms 1000
-    write /dev/sys/fs/by-name/userdata/iostat_enable 1
 
     # set readahead multiplier for POSIX_FADV_SEQUENTIAL files
     write /dev/sys/fs/by-name/userdata/seq_file_ra_mul 128
@@ -1244,6 +1242,10 @@ on boot
     class_start hal
 
     class_start core
+
+on boot && property:ro.debuggable=1
+    write /dev/sys/fs/by-name/userdata/iostat_period_ms 1000
+    write /dev/sys/fs/by-name/userdata/iostat_enable 1
 
 on nonencrypted
     class_start main

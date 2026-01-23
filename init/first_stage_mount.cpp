@@ -130,6 +130,7 @@ bool FirstStageMount::InitDevices() {
 
     std::set<std::string> devices;
     GetSuperDeviceName(&devices);
+    GetExtraBlockDevices(&devices);
 
     if (!GetDmVerityDevices(&devices)) {
         return false;

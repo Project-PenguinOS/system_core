@@ -15,14 +15,14 @@
 #   hit for subsequent disk access.
 #
 # Example:
-#   on early-init && property:ro.prefetch_boot.enabled=true
-#     start prefetch_replay
-#
-#   on init && property:ro.prefetch_boot.enabled=true
-#     start prefetch_record
-#
-#   on property:sys.boot_completed=1 && property:ro.prefetch_boot.enabled=true
-#     setprop prefetch_boot.record_stop 1
+   on early-init && property:ro.prefetch_boot.enabled=true
+     start prefetch_replay
+
+   on init && property:ro.prefetch_boot.enabled=true
+     start prefetch_record
+
+   on property:sys.boot_completed=1 && property:ro.prefetch_boot.enabled=true
+     setprop prefetch_boot.record_stop 1
 
 service prefetch_record /system/bin/prefetch record --duration ${ro.prefetch_boot.duration_s:-0}
     user root

@@ -81,6 +81,7 @@
 #include "lmkd_service.h"
 #include "mount_handler.h"
 #include "mount_namespace.h"
+#include "ota_utils.h"
 #include "property_service.h"
 #include "proto_utils.h"
 #include "reboot.h"
@@ -98,7 +99,6 @@
 #include "system/core/init/property_service.pb.h"
 #include "tradeinmode.h"
 #include "util.h"
-#include "ota_utils.h"
 
 #ifndef RECOVERY
 #include "com_android_apex.h"
@@ -164,7 +164,7 @@ struct PendingControlMessage {
 [[clang::no_destroy]] static std::condition_variable udc_detection_cv;
 [[clang::no_destroy]] static std::mutex udc_controller_lock;
 static auto udc_controller_set = false;
-static std::atomic<bool> udc_timeout = false;
+[[clang::no_destroy]] static std::atomic<bool> udc_timeout = false;
 
 // Init epolls various FDs to wait for various inputs.  It previously waited on property changes
 // with a blocking socket that contained the information related to the change, however, it was easy
@@ -257,11 +257,11 @@ static class PropWaiterState {
     }
 
     std::mutex lock_;
-    GUARDED_BY(lock_) std::unique_ptr<Timer> waiting_for_prop_{nullptr};
+    GUARDED_BY(lock_) std::unique_ptr<Timer> waiting_for_prop_ { nullptr };
     GUARDED_BY(lock_) std::string wait_prop_name_;
     GUARDED_BY(lock_) std::string wait_prop_value_;
 
-} prop_waiter_state;
+} prop_waiter_state [[clang::no_destroy]];
 
 bool start_waiting_for_property(const char* name, const char* value) {
     return prop_waiter_state.StartWaiting(name, value);
@@ -803,9 +803,7 @@ static void HandleSignalFd(int signal) {
 }
 
 static void UnblockSignals() {
-    const struct sigaction act {
-        .sa_handler = SIG_DFL
-    };
+    const struct sigaction act{.sa_handler = SIG_DFL};
     sigaction(SIGCHLD, &act, nullptr);
 
     sigset_t mask;
@@ -842,9 +840,7 @@ static Result<int> CreateAndRegisterSignalFd(Epoll* epoll, int signal) {
 static void InstallSignalFdHandler(Epoll* epoll) {
     // Applying SA_NOCLDSTOP to a defaulted SIGCHLD handler prevents the signalfd from receiving
     // SIGCHLD when a child process stops or continues (b/77867680#comment9).
-    const struct sigaction act {
-        .sa_flags = SA_NOCLDSTOP, .sa_handler = SIG_DFL
-    };
+    const struct sigaction act{.sa_flags = SA_NOCLDSTOP, .sa_handler = SIG_DFL};
     sigaction(SIGCHLD, &act, nullptr);
 
     // Register a handler to unblock signals in the child processes.
@@ -966,12 +962,6 @@ void SendLoadPersistentPropertiesMessage() {
 static Result<void> ConnectEarlyStageSnapuserdAction(const BuiltinArguments& args) {
     auto pid = GetSnapuserdFirstStagePid();
     if (!pid) {
-        return {};
-    }
-
-    auto info = GetSnapuserdFirstStageInfo();
-    if (auto iter = std::find(info.begin(), info.end(), "socket"s); iter == info.end()) {
-        // snapuserd does not support socket handoff, so exit early.
         return {};
     }
 

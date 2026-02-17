@@ -926,28 +926,6 @@ static void MountExtraFilesystems() {
 #undef CHECKCALL
 }
 
-static void InitExtraDevices() {
-    // No extra devices for microdroid. We want it as slim as possible.
-    if (IsMicrodroid()) {
-        return;
-    }
-    if constexpr (com::android::apex::flags::mount_before_data()) {
-        // Pre-create of loop devices to accelerate apexd later. This effectively overrides
-        // CONFIG_BLK_DEV_LOOP_MIN_COUNT.
-        // Fire off a thread to pre-create the loop devices to avoid blocking init.
-        std::thread([]() {
-            int count = 0;
-            for (const auto& apex_dir : kBuiltinApexPackageDirs) {
-                count += CountFilesIn(apex_dir);
-            }
-            dm::LoopControl loop_control;
-            for (int i = 0; i < count; i++) {
-                (void)loop_control.Add(i);
-            }
-        }).detach();
-    }
-}
-
 static void RecordStageBoottimes(const boot_clock::time_point& second_stage_start_time) {
     int64_t first_stage_start_time_ns = -1;
     if (auto first_stage_start_time_str = getenv(kEnvFirstStageStartedAt);
@@ -1272,14 +1250,10 @@ int SecondStageMain(int argc, char** argv) {
     InstallInitNotifier(&epoll);
     StartPropertyService(&property_fd);
 
-    // Initialize extra devices required during second stage init.
-    // This may spawn threads for background work. Hence, this should be after
-    // InstallSignalFdHandler() which needs to be called before spawning any threads.
-    InitExtraDevices();
-
-    // If boot_timeout property has been set in a debug build, start the boot monitor
+    // For a debug build: start the boot monitor using the delay (seconds) specified in the
+    // boot_timeout property. If the property is missing, use a default value of 600 seconds.
     if (GetBoolProperty("ro.debuggable", false)) {
-        int timeout = GetIntProperty("ro.boot.boot_timeout", 0);
+        int timeout = GetIntProperty("ro.boot.boot_timeout", 600);
         if (timeout > 0) {
             StartSecondStageBootMonitor(timeout);
         }

@@ -543,7 +543,6 @@ on late-init
 
     # Should be before netd, but after apex, properties and logging is available.
     trigger load-bpf-programs
-    trigger bpf-progs-loaded
 
     # Now we can start zygote.
     trigger zygote-start
@@ -1022,6 +1021,10 @@ on post-fs-data
     mkdir /data/misc/stats-service/ 0770 statsd system
     mkdir /data/misc/train-info/ 0770 statsd system
 
+    # System server uses securityfs to manage the safesetid policy (b/414893665).
+    mount securityfs securityfs /sys/kernel/security rw
+    chown system /sys/kernel/security/safesetid/uid_allowlist_policy
+
     wait_for_prop apexd.status activated
     # Wait for KeyMints to receive APEX module info before starting code from updateable APEXes.
     # This is to prevent APEX modules from interfering in module measurement.
@@ -1083,31 +1086,6 @@ on post-fs-data
 
 on property:vold.checkpoint_committed=1
     trigger post-fs-data-checkpointed
-
-# It is important that we start bpfloader after:
-#   - /sys/fs/bpf is already mounted,
-#   - apex (incl. rollback) is initialized (so that we can load bpf
-#     programs shipped as part of apex mainline modules)
-#   - logd is ready for us to log stuff
-#
-# At the same time we want to be as early as possible to reduce races and thus
-# failures (before memory is fragmented, and cpu is busy running tons of other
-# stuff) and we absolutely want to be before netd and the system boot slot is
-# considered to have booted successfully.
-on load-bpf-programs
-    # Temporarily relax access to kallsyms so that bpfloader can resolve kernel symbols
-    # at load time.
-    #
-    # NOTE: Still requires CAP_SYSLOG and sepolicy allow rules to read /proc/kallsyms
-    write /proc/sys/kernel/kptr_restrict 1
-
-    exec_start bpfloader
-
-    # Restore kallsyms protection after bpf programs have been loaded.
-    write /proc/sys/kernel/kptr_restrict 2
-
-on bpf-progs-loaded
-    start netd
 
 # It is recommended to put unnecessary data/ initialization from post-fs-data
 # to start-zygote in device's init.rc to unblock zygote start.

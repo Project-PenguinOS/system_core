@@ -109,7 +109,6 @@ cc_library_static {
 
     whole_static_libs: [
         "libasync_safe",
-        "libcutils",
         "libdebuggerd",
     ],
 
@@ -162,7 +161,6 @@ cc_library_static {
         "libdebuggerd",
         "libunwindstack_no_dex_no_std",
         "liblzma",
-        "libcutils",
     ],
 
     header_libs: ["bionic_libc_platform_headers"],
@@ -274,7 +272,6 @@ cc_library_static {
         "libunwindstack_no_dex_no_std",
         "liblzma",
         "libbase",
-        "libcutils",
     ],
 
     whole_static_libs: [
@@ -383,6 +380,7 @@ cc_test {
             ],
             static_libs: [
                 "libasync_safe",
+                "libcutils",
                 "libtombstoned_client_static",
             ],
         },
@@ -394,7 +392,6 @@ cc_test {
 
     shared_libs: [
         "libbase",
-        "libcutils",
         "libdebuggerd_client",
         "liblog",
         "libnativehelper",

@@ -50,6 +50,7 @@ using android::base::WriteStringToFile;
 
 static constexpr const char* TASK_PROFILE_DB_FILE = "/etc/task_profiles.json";
 static constexpr const char* TASK_PROFILE_DB_VENDOR_FILE = "/vendor/etc/task_profiles.json";
+static constexpr const char* TASK_PROFILE_DB_SYSTEM_EXT_FILE = "/system_ext/etc/task_profiles.json";
 
 static constexpr const char* TEMPLATE_TASK_PROFILE_API_FILE =
         "/etc/task_profiles/task_profiles_%u.json";
@@ -306,7 +307,7 @@ SetCgroupAction::SetCgroupAction(const CgroupControllerWrapper& c, const std::st
 
 bool SetCgroupAction::AddTidToCgroup(pid_t tid, int fd, ResourceCacheType cache_type) const {
     if (tid <= 0) {
-        return true;
+        return false;
     }
 
     std::string value = std::to_string(tid);
@@ -343,8 +344,18 @@ bool SetCgroupAction::AddTidToCgroup(pid_t tid, int fd, ResourceCacheType cache_
 
 ProfileAction::CacheUseResult SetCgroupAction::UseCachedFd(ResourceCacheType cache_type,
                                                            int id) const {
+    if (cache_type < RCT_TASK || cache_type >= RCT_COUNT) {
+        LOG(ERROR) << "Invalid cache_type " << cache_type;
+        return ProfileAction::FAIL;
+    }
+
     std::lock_guard<std::mutex> lock(fd_mutex_);
     if (FdCacheHelper::IsCached(fd_[cache_type])) {
+        if (int fd = fd_[cache_type]; fcntl(fd, F_GETFD) == -1) {
+            PLOG(ERROR) << "FD (" << fd << ") is invalid for cache_type " << cache_type;
+            return ProfileAction::FAIL;
+        }
+
         // fd is cached, reuse it
         if (!AddTidToCgroup(id, fd_[cache_type], cache_type)) {
             LOG(ERROR) << "Failed to add task into cgroup";
@@ -912,6 +923,13 @@ TaskProfiles::TaskProfiles() {
         !Load(CgroupMap::GetInstance(), TASK_PROFILE_DB_VENDOR_FILE)) {
         LOG(ERROR) << "Loading " << TASK_PROFILE_DB_VENDOR_FILE << " for [" << getpid()
                    << "] failed";
+    }
+
+    // load system_ext task profiles if the file exists
+    if (!access(TASK_PROFILE_DB_SYSTEM_EXT_FILE, F_OK) &&
+        !Load(CgroupMap::GetInstance(), TASK_PROFILE_DB_SYSTEM_EXT_FILE)) {
+        LOG(ERROR) << "Loading " << TASK_PROFILE_DB_SYSTEM_EXT_FILE
+                   << " for [" << getpid() << "] failed";
     }
 }
 

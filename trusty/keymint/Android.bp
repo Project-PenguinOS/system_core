@@ -79,7 +79,11 @@ rust_binary {
     name: "android.hardware.security.keymint-service.trusty_system_vm",
     system_ext_specific: true,
     defaults: ["android.hardware.security.keymint-service.rust.trusty.default"],
-    init_rc: ["android.hardware.security.keymint-service.trusty_system_vm.rc"],
+    // TODO(b/487994455): remove `init_rc` to decouple AL config
+    init_rc: select(soong_config_variable("trusty_system_vm", "decouple_init_rc_from_keymint_hal"), {
+        true: [],
+        default: ["android.hardware.security.keymint-service.trusty_system_vm.rc"],
+    }),
     features: select((
         soong_config_variable("trusty_system_vm", "buildtype"),
         soong_config_variable("trusty_system_vm", "keymint_rot_nonsecure"),
@@ -87,13 +91,9 @@ rust_binary {
         ("userdebug", true): ["vm_rot_nonsecure"],
         ("eng", true): ["vm_rot_nonsecure"],
         (default, default): [],
-    }) + select((
-        soong_config_variable("trusty_system_vm", "buildtype"),
-        soong_config_variable("trusty_system_vm", "keymint_reprovisioning_via_hal"),
-    ), {
-        ("userdebug", true): ["vm_reprovisioning_via_hal"],
-        ("eng", true): ["vm_reprovisioning_via_hal"],
-        (default, default): [],
+    }) + select(soong_config_variable("trusty_system_vm", "keymint_reprovisioning_via_hal"), {
+        true: ["vm_reprovisioning_via_hal"],
+        default: [],
     }),
     srcs: [
         "src/keymint_hal_system_vm_main.rs",

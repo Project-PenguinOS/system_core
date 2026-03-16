@@ -228,7 +228,7 @@ static void ParseNetworkSerialTest(const std::string& description, const std::st
 
 static void ParseNetworkSerialNegativeTest(const std::string& description,
                                            const std::string& serial,
-                                           const FastbootError expected_error) {
+                                           const FastbootError::Type expected_error) {
     const Result<NetworkSerial, FastbootError> parsed = ParseNetworkSerial(serial);
 
     EXPECT_FALSE(parsed.ok()) << description;
@@ -251,13 +251,13 @@ TEST(FastBoot, ParseNetworkSerial) {
     ParseNetworkSerialTest("empty IPv6 parsed", "tcp:::", "::", Socket::Protocol::kTcp, 5554);
 
     ParseNetworkSerialNegativeTest("wrong prefix", "tcpa:192.168.1.0",
-                                   FastbootError::NETWORK_SERIAL_WRONG_PREFIX);
+                                   FastbootError::Type::NETWORK_SERIAL_WRONG_PREFIX);
 
     ParseNetworkSerialNegativeTest("no prefix", "192.168.1.0",
-                                   FastbootError::NETWORK_SERIAL_WRONG_PREFIX);
+                                   FastbootError::Type::NETWORK_SERIAL_WRONG_PREFIX);
 
     ParseNetworkSerialNegativeTest("wrong port", "tcp:192.168.1.0:-1",
-                                   FastbootError::NETWORK_SERIAL_WRONG_ADDRESS);
+                                   FastbootError::Type::NETWORK_SERIAL_WRONG_ADDRESS);
 }
 
 class FlashingTest : public ::testing::Test {

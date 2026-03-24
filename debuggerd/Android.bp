@@ -16,7 +16,10 @@ cc_defaults {
         "-DANDROID_DEBUGGABLE=0",
         "-DANDROID_DISABLE_TLS_FOR_LINKER=1",
         "-fno-finite-loops",
-    ],
+    ] + select(release_flag("RELEASE_DEPRECATE_RUNTIME_APEX"), {
+        true: ["-DRELEASE_DEPRECATE_RUNTIME_APEX"],
+        default: [],
+    }),
 
     local_include_dirs: ["include"],
     product_variables: {
@@ -89,7 +92,10 @@ cc_library_static {
 
     export_header_lib_headers: ["libdebuggerd_common_headers"],
     export_include_dirs: ["tombstoned/include"],
-    apex_available: ["com.android.runtime"],
+    apex_available: [
+        "//apex_available:platform",
+        "com.android.runtime",
+    ],
 }
 
 // Core implementation, linked into libdebuggerd_handler and the dynamic linker.
@@ -115,6 +121,7 @@ cc_library_static {
     export_header_lib_headers: ["libdebuggerd_common_headers"],
     export_include_dirs: ["include"],
     apex_available: [
+        "//apex_available:platform",
         "com.android.runtime",
     ],
 }
@@ -327,6 +334,7 @@ cc_library_static {
         },
     },
     apex_available: [
+        "//apex_available:platform",
         "com.android.runtime",
     ],
 }
@@ -486,6 +494,7 @@ cc_binary {
     ],
 
     apex_available: [
+        "//apex_available:platform",
         "com.android.runtime",
     ],
 

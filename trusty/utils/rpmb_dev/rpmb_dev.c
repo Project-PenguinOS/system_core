@@ -585,15 +585,7 @@ int main(int argc, char** argv) {
         return EXIT_SUCCESS;
     }
 
-    open_flags = O_RDWR;
-#if !HOST_TEST
-    /*
-     * Use O_SYNC to ensure consistency with storageproxyd across unclean
-     * reboots. We don't reboot the host while preserving state though, so
-     * we can skip this option for host tests to make them run faster.
-     */
-    open_flags |= O_SYNC;
-#endif
+    open_flags = O_RDWR | O_SYNC;
     if (init) {
         open_flags |= O_CREAT | O_TRUNC;
     }

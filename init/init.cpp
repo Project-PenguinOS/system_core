@@ -1182,9 +1182,7 @@ int SecondStageMain(int argc, char** argv) {
                                        }),
                         fstab.end());
             LOG(INFO) << "Running deferred mounting of overlayfs";
-            if constexpr (!IsMicrodroid()) {
-                fs_mgr_overlayfs_mount_all(&fstab);
-            }
+            fs_mgr_overlayfs_mount_all(&fstab);
         }
 
     }
@@ -1263,9 +1261,7 @@ int SecondStageMain(int argc, char** argv) {
     }
     unsetenv("INIT_AVB_VERSION");
 
-    if constexpr (!IsMicrodroid()) {
-        fs_mgr_vendor_overlay_mount_all();
-    }
+    fs_mgr_vendor_overlay_mount_all();
     export_oem_lock_status();
     MountHandler mount_handler(&epoll);
 

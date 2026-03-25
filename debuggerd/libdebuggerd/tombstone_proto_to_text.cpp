@@ -464,13 +464,10 @@ static void print_memory_maps(CallbackType callback, const Tombstone& tombstone)
         line = "--->";
       }
     }
-    StringAppendF(&line, "%s-%s ", format_pointer(map.begin_address()).c_str(),
+    StringAppendF(&line, "%s-%s", format_pointer(map.begin_address()).c_str(),
                   format_pointer(map.end_address() - 1).c_str());
-    std::string flags_str("---");
-    if (map.read()) flags_str[0] = 'r';
-    if (map.write()) flags_str[1] = 'w';
-    if (map.execute()) flags_str[2] = 'x';
-    line += flags_str;
+    StringAppendF(&line, " %s%s%s", map.read() ? "r" : "-", map.write() ? "w" : "-",
+                  map.execute() ? "x" : "-");
     StringAppendF(&line, "  %8" PRIx64 "  %8" PRIx64, map.offset(),
                   map.end_address() - map.begin_address());
 
@@ -487,15 +484,6 @@ static void print_memory_maps(CallbackType callback, const Tombstone& tombstone)
     }
 
     CBS("%s", line.c_str());
-    if (!map.vmflags().empty()) {
-      // The spacing should cause the vm flags string to line up with the rw-
-      // from the map line.
-      // For 64 bit platforms, space length:
-      //   17(map addr) * 2 + 1(dash) + 1(space)- 9(VmFlags: )
-      // For 32 bit platforms, space length:
-      //   8(map addr) * 2 + 1(dash) + 1(space) - 9(VmFlags: )
-      CBS("    %*sVmFlags: %s", pointer_width(tombstone) == 8 ? 27 : 9, " ", map.vmflags().c_str());
-    }
   }
 
   if (has_fault_address && !printed_fault_address_marker) {
@@ -762,18 +750,13 @@ bool tombstone_proto_to_text(const Tombstone& tombstone, CallbackType callback,
     CBS("");
     CBS("open files:");
     for (const auto& fd : tombstone.open_fds()) {
-      std::string line = StringPrintf("    fd %d: %s (", fd.fd(), fd.path().c_str());
+      std::optional<std::string> owner;
       if (!fd.owner().empty()) {
-        line += StringPrintf("owned by %s 0x%" PRIx64, fd.owner().c_str(), fd.tag());
-      } else {
-        line += "unowned";
+        owner = StringPrintf("owned by %s 0x%" PRIx64, fd.owner().c_str(), fd.tag());
       }
-      line += ')';
 
-      if (!fd.details().empty()) {
-        line += " (" + fd.details() + ")";
-      }
-      CBS("%s", line.c_str());
+      CBS("    fd %d: %s (%s) %s", fd.fd(), fd.path().c_str(), owner ? owner->c_str() : "unowned",
+                                   fd.details().c_str());
     }
   }
 

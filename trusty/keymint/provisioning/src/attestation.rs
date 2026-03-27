@@ -42,8 +42,10 @@ pub(crate) fn get_attestation_keys(file: fs::File) -> Result<Vec<AttestationKey>
                     .context("parsing algorithm")?;
                 let private_key =
                     parse_private_key(&mut xml_events_reader).context("parsing private key")?;
+                let certs = parse_cert_chain(&mut xml_events_reader)
+                    .context("parsing certificate chain")?;
 
-                let attestation_key = AttestationKey { algorithm, private_key, certs: vec![] };
+                let attestation_key = AttestationKey { algorithm, private_key, certs };
 
                 attestation_keys.push(attestation_key);
             }
@@ -89,13 +91,36 @@ fn decode_to_der(format: String, characters: String) -> Result<Vec<u8>> {
     }
 }
 
-fn base64_to_der(content: String) -> anyhow::Result<Vec<u8>> {
+fn base64_to_der(content: String) -> Result<Vec<u8>> {
     let base64_content = content
         .lines()
         .map(|line| line.trim())
         .filter(|line| !line.is_empty() && !line.starts_with("---"))
         .collect::<String>();
     Ok(general_purpose::STANDARD.decode(base64_content)?)
+}
+
+fn parse_cert_chain(xml_reader: &mut EventReader<fs::File>) -> Result<Vec<Vec<u8>>> {
+    let mut cert_chain = vec![];
+    loop {
+        match xml_reader.next()? {
+            XmlEvent::StartElement { name, attributes, .. }
+                if name.local_name.as_str() == "Certificate" =>
+            {
+                let format = get_value_from_attribute(attributes, "format")?;
+                let event = xml_reader.next()?;
+                let XmlEvent::Characters(text) = event else {
+                    bail!("Certificate Value not found");
+                };
+                cert_chain.push(decode_to_der(format, text)?);
+            }
+            XmlEvent::EndElement { name } if name.local_name.as_str() == "CertificateChain" => {
+                return Ok(cert_chain)
+            }
+            XmlEvent::EndDocument => bail!("Unexpected end of document"),
+            _ => continue,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -109,10 +134,14 @@ mod test {
         let expected_private_key = general_purpose::STANDARD.decode(private_key)?;
         let attestation_keys = get_attestation_keys(file)?;
         assert_eq!(attestation_keys.len(), 2);
+        let cert_0 = "MIICtjCCAh+gAwIBAgICEAAwDQYJKoZIhvcNAQELBQAwYzELMAkGA1UEBhMCVVMxEzARBgNVBAgMCkNhbGlmb3JuaWExFjAUBgNVBAcMDU1vdW50YWluIFZpZXcxFTATBgNVBAoMDEdvb2dsZSwgSW5jLjEQMA4GA1UECwwHQW5kcm9pZDAeFw0xNjAxMDQxMjQwNTNaFw0zNTEyMzAxMjQwNTNaMHYxCzAJBgNVBAYTAlVTMRMwEQYDVQQIDApDYWxpZm9ybmlhMRUwEwYDVQQKDAxHb29nbGUsIEluYy4xEDAOBgNVBAsMB0FuZHJvaWQxKTAnBgNVBAMMIEFuZHJvaWQgU29mdHdhcmUgQXR0ZXN0YXRpb24gS2V5MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDAgyPcVogbuDAgafWwhWHG7r5/BeL1qEIEir6LR752/q7yXPKbKvoyABQWAUKZiaFfz8aBXrNjWDwv0vIL5Jgyg92BSxbX4YVBeuVKvClqOm21wAQIO2jFVsHwIzmRZBmGTVC3TUCuykhMdzVsiVoMJ1q/rEmdXX0jYvKcXgLocQIDAQABo2YwZDAdBgNVHQ4EFgQU1AwQG/jNY7n3OVK1DhNcpteZk4YwHwYDVR0jBBgwFoAUKfrxrMxN0kyWQCd1trDpMuUH/i4wEgYDVR0TAQH/BAgwBgEB/wIBADAOBgNVHQ8BAf8EBAMCAoQwDQYJKoZIhvcNAQELBQADgYEAni1IX4xnM9waha2Z11Aj6hTsQ7DhnerCI0YecrUZ3GAi5KVoMWwLVcTmnKItnzpPk2sxixZ4Fg2Iy9mLzICdhPDCJ+NrOPH90ecXcjFZNX2W88V/q52PlmEmT7K+gbsNSQQiis6f9/VCLiVE+iEHElqDtVWtGIL4QBSbnCBjBH8=";
+        let cert_1 = "MIICpzCCAhCgAwIBAgIJAP+U2d2fB8gMMA0GCSqGSIb3DQEBCwUAMGMxCzAJBgNVBAYTAlVTMRMwEQYDVQQIDApDYWxpZm9ybmlhMRYwFAYDVQQHDA1Nb3VudGFpbiBWaWV3MRUwEwYDVQQKDAxHb29nbGUsIEluYy4xEDAOBgNVBAsMB0FuZHJvaWQwHhcNMTYwMTA0MTIzMTA4WhcNMzUxMjMwMTIzMTA4WjBjMQswCQYDVQQGEwJVUzETMBEGA1UECAwKQ2FsaWZvcm5pYTEWMBQGA1UEBwwNTW91bnRhaW4gVmlldzEVMBMGA1UECgwMR29vZ2xlLCBJbmMuMRAwDgYDVQQLDAdBbmRyb2lkMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCia63rbi5EYe/VDoLmt5TRdSMfd5tjkWP/96r/C3JHTsAsQ+wzfNes7UA+jCigZtX3hwszl94OuE4TQKuvpSe/lWmgMdsGUmX4RFlXYfC78hdLt0GAZMAoDo9Sd47b0ke2RekZyOmLw9vCkT/X11DEHTVm+Vfkl5YLCazOkjWFmwIDAQABo2MwYTAdBgNVHQ4EFgQUKfrxrMxN0kyWQCd1trDpMuUH/i4wHwYDVR0jBBgwFoAUKfrxrMxN0kyWQCd1trDpMuUH/i4wDwYDVR0TAQH/BAUwAwEB/zAOBgNVHQ8BAf8EBAMCAoQwDQYJKoZIhvcNAQELBQADgYEAT3LzNlmNDsG5dFsxWfbwjSVJMJ6jHBwp0kUtILlNX2S06IDHeHqcOd6os/W/L3BfRxBcxebrTQaZYdKumgf/93y4q+ucDyQHXrF/unlx/U1bnt8Uqf7f7XzAiF343ZtkMlbVNZriE/mPzsF83O+kqrJVw4OpLvtc9mL1J1IXvmM=";
+        let expected_cert_0 = general_purpose::STANDARD.decode(cert_0)?;
+        let expected_cert_1 = general_purpose::STANDARD.decode(cert_1)?;
         let expected_attestation_key_0 = AttestationKey {
             algorithm: "rsa".to_string(),
             private_key: expected_private_key,
-            certs: vec![],
+            certs: vec![expected_cert_0, expected_cert_1],
         };
         assert_eq!(attestation_keys[0], expected_attestation_key_0);
         Ok(())

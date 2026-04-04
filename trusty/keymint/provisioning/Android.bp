@@ -11,7 +11,6 @@ rust_defaults {
         "android.trusty.provisioning-rust",
         "libandroid_logger",
         "libanyhow",
-        "libbase64_rust",
         "libbinder_rs",
         "libcbor_util",
         "libclap",

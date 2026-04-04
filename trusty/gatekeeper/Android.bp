@@ -74,6 +74,7 @@ cc_binary {
 cc_binary {
     name: "android.hardware.gatekeeper-service.trusty_tee",
     defaults: ["android.hardware.gatekeeper-service.trusty.defaults"],
+    init_rc: ["android.hardware.gatekeeper-service.trusty_tee.rc"],
 }
 
 prebuilt_etc {

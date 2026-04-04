@@ -213,7 +213,7 @@ fn set_attestation_keys(
         // TODO(b/478175656): update provisionAttestationKey api to accept certificate chain
         // to consolidate provisioning of key material, clearing of existing cert chain
         // and provision the new cert chain
-        provisioning_service.provisionAttestationKey(algorithm, &attestation_key.private_key)?;
+        provisioning_service.provisionAttestationKey(algorithm, &attestation_key.key)?;
 
         for cert in attestation_key.certs {
             provisioning_service.appendAttestationCertChain(algorithm, &cert)?;

@@ -145,6 +145,9 @@ const std::unordered_map<std::string_view, AtomInfo> kBootEventToAtomInfo = {
     {"boottime.bootloader.SW",
      {android::util::bootstats::BOOT_TIME_EVENT_DURATION_REPORTED,
       android::util::bootstats::BOOT_TIME_EVENT_DURATION__EVENT__BOOTLOADER_UI_WAIT}},
+    {"boottime.bootloader.splash",
+     {android::util::bootstats::BOOT_TIME_EVENT_DURATION_REPORTED,
+      android::util::bootstats::BOOT_TIME_EVENT_DURATION__EVENT__BOOTLOADER_SPLASH}},
     {"boottime.bootloader.total",
      {android::util::bootstats::BOOT_TIME_EVENT_DURATION_REPORTED,
       android::util::bootstats::BOOT_TIME_EVENT_DURATION__EVENT__BOOTLOADER_TOTAL}},
@@ -512,6 +515,8 @@ const std::map<std::string, int32_t> kBootReasonMap = {
     {"reboot,ocp,.*", 239},
     {"reboot,ntc,pmic,sub", 240},
     {"reboot,telemtemp,pmic,main", 241},
+    {"reboot,longkey,powerkey,warmboot", 242},
+    {"reboot,longkey,powerkey,false_alarm", 243},
 };
 
 // Converts a string value representing the reason the system booted to an

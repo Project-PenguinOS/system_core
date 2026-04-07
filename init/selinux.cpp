@@ -336,6 +336,10 @@ bool OpenSplitPolicy(PolicyFile* policy_file) {
     std::string genfs_cil_file =
             std::format("/system/etc/selinux/plat_sepolicy_genfs_{}.cil", vendor_genfs_version);
     if (access(genfs_cil_file.c_str(), F_OK) != 0) {
+        if (vendor_genfs_version >= 202504) {
+            LOG(ERROR) << "Missing " << genfs_cil_file;
+            return false;
+        }
         LOG(INFO) << "Missing " << genfs_cil_file << "; skipping";
         genfs_cil_file.clear();
     } else {
@@ -346,7 +350,7 @@ bool OpenSplitPolicy(PolicyFile* policy_file) {
     std::vector<const char*> compile_args {
         "/system/bin/secilc",
         use_userdebug_policy ? *userdebug_plat_sepolicy : plat_policy_cil_file,
-        "-m", "-M", "true", "-G", "-N",
+        "-m", "-M", "true", "-G", "-N", "-v",
         "-c", version_as_string.c_str(),
         plat_mapping_file.c_str(),
         "-o", compiled_sepolicy,

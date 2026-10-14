@@ -269,6 +269,16 @@ BlockDeviceInfo DeviceHandler::GetBlockDeviceInfo(const std::string& uevent_path
     }
 
     info.is_boot_device = boot_devices_.find(info.str) != boot_devices_.end();
+    if (!info.is_boot_device && info.type == "platform") {
+        // Bootloaders built for downstream kernels name the boot device "soc/1d84000.ufshc",
+        // while mainline device trees put the same node at "soc@0/1d84000.ufshc".
+        auto parts = Split(info.str, "/");
+        for (size_t i = 0; i + 1 < parts.size(); i++) {
+            parts[i] = parts[i].substr(0, parts[i].find('@'));
+        }
+        info.is_boot_device = boot_devices_.find(android::base::Join(parts, "/")) !=
+                              boot_devices_.end();
+    }
 
     return info;
 }
